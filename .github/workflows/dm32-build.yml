@@ -1,0 +1,64 @@
+
+name: DM32 Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build-dm32:
+    name: Build Baofeng DM-32
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: false
+
+      - name: Download dependencies
+        run: tools/checkout-submodules.sh
+
+      - name: Setup C-SKY toolchain
+        id: tc
+        uses: ./.github/actions/toolchain
+        with:
+          toolchain: csky
+          image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
+          registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
+          registry-user: ${{ vars.RFOUNDRY_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.RFOUNDRY_CSKY_REGISTRY_TOKEN || github.token }}
+
+      - name: Compile DM32 firmware
+        env:
+          RUN: ${{ steps.tc.outputs.run }}
+        run: |
+          set -euo pipefail
+          $RUN make -j4 BOARD=dm32 2>&1 | tee dm32-build.log
+
+      - name: Verify firmware
+        run: |
+          ls -lh build/dm32/
+          test -s build/dm32/rfoundry_dm32.bin
+          sha256sum build/dm32/*.bin
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: DM32-Firmware
+          path: |
+            build/dm32/*.bin
+            LICENSE
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: DM32-Build-Log
+          path: dm32-build.log
+          if-no-files-found: ignore
